@@ -46,7 +46,32 @@
             android:layout_weight="1"
             android:layout_marginStart="8dp"
             android:enabled="false"
-            android:text="選択範囲を印刷" />
+            android:text="画像を印刷" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp">
+
+        <Button
+            android:id="@+id/btnOcr"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:enabled="false"
+            android:text="選択範囲を文字認識" />
+
+        <Button
+            android:id="@+id/btnPrintText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:enabled="false"
+            android:text="テキストを印刷" />
 
     </LinearLayout>
 
@@ -57,5 +82,17 @@
         android:layout_marginTop="4dp"
         android:text="写真を撮影後、指でドラッグして印刷したい範囲を選択してください"
         android:textSize="12sp" />
+
+    <!-- OCRの認識結果。誤字があればここで修正してから印刷できる -->
+    <EditText
+        android:id="@+id/etRecognizedText"
+        android:layout_width="match_parent"
+        android:layout_height="120dp"
+        android:layout_marginTop="4dp"
+        android:background="#F5F5F5"
+        android:gravity="top|start"
+        android:hint="ここに認識したテキストが表示されます(編集可能)"
+        android:padding="8dp"
+        android:textSize="14sp" />
 
 </LinearLayout>

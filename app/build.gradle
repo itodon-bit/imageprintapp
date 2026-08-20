@@ -42,4 +42,6 @@ dependencies {
     implementation 'androidx.print:print:1.0.0'
     // カメラ撮影用のActivity Result API(AndroidX Activity)
     implementation 'androidx.activity:activity-ktx:1.9.0'
+    // 日本語対応のOCR(文字認識)。Google Play Servicesが自動でモデルをダウンロードする
+    implementation 'com.google.android.gms:play-services-mlkit-text-recognition-japanese:16.0.0'
 }

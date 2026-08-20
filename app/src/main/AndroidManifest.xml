@@ -4,6 +4,8 @@
     <!-- カメラ撮影に必要な権限 -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="true" />
+    <!-- OCR(文字認識)モデルの初回ダウンロードに必要 -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- 印刷フレームワーク自体はネットワーク権限を個別に要求しないが、
          プリンタ検出用のPrint Serviceアプリ側が処理するため追加不要 -->

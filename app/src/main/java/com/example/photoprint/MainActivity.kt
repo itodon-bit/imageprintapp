@@ -4,11 +4,16 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.RectF
 import android.net.Uri
 import android.os.Bundle
+import android.text.StaticLayout
+import android.text.TextPaint
 import android.widget.Button
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
@@ -17,8 +22,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.print.PrintHelper
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
 import java.io.File
-import java.io.FileOutputStream
 import kotlin.math.max
 import kotlin.math.min
 
@@ -28,7 +35,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cropOverlayView: CropOverlayView
     private lateinit var btnTakePhoto: Button
     private lateinit var btnPrint: Button
+    private lateinit var btnOcr: Button
+    private lateinit var btnPrintText: Button
     private lateinit var tvHint: TextView
+    private lateinit var etRecognizedText: EditText
+
+    // 日本語対応のテキスト認識器(端末上でOCRを実行する)
+    private val textRecognizer by lazy {
+        TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build())
+    }
 
     // 撮影した写真の一時保存先URI/File
     private var photoUri: Uri? = null
@@ -65,10 +80,15 @@ class MainActivity : AppCompatActivity() {
         cropOverlayView = findViewById(R.id.cropOverlayView)
         btnTakePhoto = findViewById(R.id.btnTakePhoto)
         btnPrint = findViewById(R.id.btnPrint)
+        btnOcr = findViewById(R.id.btnOcr)
+        btnPrintText = findViewById(R.id.btnPrintText)
         tvHint = findViewById(R.id.tvHint)
+        etRecognizedText = findViewById(R.id.etRecognizedText)
 
         btnTakePhoto.setOnClickListener { checkPermissionAndLaunchCamera() }
         btnPrint.setOnClickListener { printSelectedArea() }
+        btnOcr.setOnClickListener { recognizeTextInSelection() }
+        btnPrintText.setOnClickListener { printRecognizedText() }
     }
 
     private fun checkPermissionAndLaunchCamera() {
@@ -107,6 +127,9 @@ class MainActivity : AppCompatActivity() {
             cropOverlayView.reset()
         }
         btnPrint.isEnabled = true
+        btnOcr.isEnabled = true
+        btnPrintText.isEnabled = false
+        etRecognizedText.setText("")
         tvHint.text = "指でドラッグして印刷したい範囲を選択してください"
     }
 
@@ -174,5 +197,89 @@ class MainActivity : AppCompatActivity() {
                 Toast.LENGTH_LONG
             ).show()
         }
+    }
+
+    /** 選択範囲を切り出し、その画像に対してOCR(文字認識)を実行する */
+    private fun recognizeTextInSelection() {
+        val cropped = cropSelectedArea() ?: return
+        val inputImage = InputImage.fromBitmap(cropped, 0)
+
+        btnOcr.isEnabled = false
+        tvHint.text = "文字を認識しています…"
+
+        textRecognizer.process(inputImage)
+            .addOnSuccessListener { result ->
+                btnOcr.isEnabled = true
+                val recognized = result.text
+                if (recognized.isBlank()) {
+                    tvHint.text = "文字を認識できませんでした。範囲を調整して再度お試しください"
+                    btnPrintText.isEnabled = false
+                } else {
+                    etRecognizedText.setText(recognized)
+                    btnPrintText.isEnabled = true
+                    tvHint.text = "認識結果を確認・修正してから印刷してください"
+                }
+            }
+            .addOnFailureListener { e ->
+                btnOcr.isEnabled = true
+                tvHint.text = "文字認識に失敗しました"
+                Toast.makeText(
+                    this,
+                    "文字認識でエラーが発生しました: ${e.localizedMessage}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+    }
+
+    /** 認識(または編集)されたテキストを1枚の紙のレイアウトに描画し、印刷する */
+    private fun printRecognizedText() {
+        val text = etRecognizedText.text?.toString()?.trim()
+        if (text.isNullOrEmpty()) {
+            Toast.makeText(this, "印刷するテキストがありません", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val textBitmap = createTextBitmap(text)
+        val printHelper = PrintHelper(this).apply {
+            scaleMode = PrintHelper.SCALE_MODE_FIT
+        }
+
+        try {
+            printHelper.printBitmap("recognized_text_" + System.currentTimeMillis(), textBitmap)
+        } catch (e: Exception) {
+            Toast.makeText(
+                this,
+                "印刷を開始できませんでした。プリンタの印刷サービスが有効になっているか確認してください。",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    /** テキストをA4相当の白紙レイアウトに描画したBitmapを生成する */
+    private fun createTextBitmap(text: String): Bitmap {
+        val pageWidth = 1240 // 約A4サイズ相当(150dpi換算)の幅
+        val padding = 60
+
+        val textPaint = TextPaint().apply {
+            color = Color.BLACK
+            textSize = 32f
+            isAntiAlias = true
+        }
+
+        val layout = StaticLayout.Builder
+            .obtain(text, 0, text.length, textPaint, pageWidth - padding * 2)
+            .setLineSpacing(0f, 1.3f)
+            .build()
+
+        val pageHeight = max(layout.height + padding * 2, 800)
+        val bitmap = Bitmap.createBitmap(pageWidth, pageHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.WHITE)
+        canvas.save()
+        canvas.translate(padding.toFloat(), padding.toFloat())
+        layout.draw(canvas)
+        canvas.restore()
+
+        return bitmap
     }
 }
