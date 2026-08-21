@@ -87,12 +87,12 @@
     <EditText
         android:id="@+id/etRecognizedText"
         android:layout_width="match_parent"
-        android:layout_height="120dp"
+        android:layout_height="160dp"
         android:layout_marginTop="4dp"
         android:background="#F5F5F5"
         android:gravity="top|start"
         android:hint="ここに認識したテキストが表示されます(編集可能)"
         android:padding="8dp"
-        android:textSize="14sp" />
+        android:textSize="22sp" />
 
 </LinearLayout>

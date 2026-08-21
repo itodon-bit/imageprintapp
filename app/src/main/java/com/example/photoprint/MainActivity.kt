@@ -6,7 +6,10 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
+import android.graphics.Paint
 import android.graphics.RectF
 import android.net.Uri
 import android.os.Bundle
@@ -21,6 +24,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.exifinterface.media.ExifInterface
 import androidx.print.PrintHelper
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -118,7 +122,7 @@ class MainActivity : AppCompatActivity() {
         val file = photoFile ?: return
 
         // 大きな画像でメモリを圧迫しないよう、必要に応じて縮小して読み込む
-        val bitmap = decodeSampledBitmap(file, 2048, 2048)
+        val bitmap = decodeSampledBitmap(file, 3072, 3072)
         originalBitmap = bitmap
 
         imageView.setImageBitmap(bitmap)
@@ -133,7 +137,7 @@ class MainActivity : AppCompatActivity() {
         tvHint.text = "指でドラッグして印刷したい範囲を選択してください"
     }
 
-    /** 画像を必要サイズまで縮小して読み込む(OutOfMemory対策) */
+    /** 画像を必要サイズまで縮小して読み込む(OutOfMemory対策)。EXIFの回転情報も適用する */
     private fun decodeSampledBitmap(file: File, reqWidth: Int, reqHeight: Int): Bitmap {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, options)
@@ -149,8 +153,34 @@ class MainActivity : AppCompatActivity() {
         }
 
         val finalOptions = BitmapFactory.Options().apply { this.inSampleSize = inSampleSize }
-        return BitmapFactory.decodeFile(file.absolutePath, finalOptions)
+        val decoded = BitmapFactory.decodeFile(file.absolutePath, finalOptions)
             ?: throw IllegalStateException("画像の読み込みに失敗しました")
+
+        return rotateBitmapToMatchExif(decoded, file)
+    }
+
+    /**
+     * カメラアプリはピクセルデータを横向きのまま保存し、正しい向きをEXIFのOrientationタグにだけ
+     * 記録することが多い。そのため撮影時に見た向きと表示が一致するよう、ここで実ピクセルを回転させる。
+     */
+    private fun rotateBitmapToMatchExif(bitmap: Bitmap, file: File): Bitmap {
+        val orientation = try {
+            ExifInterface(file.absolutePath)
+                .getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        } catch (e: Exception) {
+            ExifInterface.ORIENTATION_NORMAL
+        }
+
+        val rotationDegrees = when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> 0f
+        }
+        if (rotationDegrees == 0f) return bitmap
+
+        val matrix = Matrix().apply { postRotate(rotationDegrees) }
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
     /** CropOverlayViewの選択範囲(View座標)をBitmap上の座標に変換してトリミングする */
@@ -199,10 +229,54 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * OCRの認識精度を上げるための前処理。
+     * 1) 選択範囲が小さい場合は文字の解像度を確保するため拡大する
+     * 2) グレースケール化 + コントラスト強調で文字と背景の境界をくっきりさせる
+     */
+    private fun preprocessForOcr(bitmap: Bitmap): Bitmap {
+        val minHeightForOcr = 600
+        val scale = if (bitmap.height < minHeightForOcr) {
+            minHeightForOcr.toFloat() / bitmap.height
+        } else 1f
+
+        val scaled = if (scale > 1f) {
+            Bitmap.createScaledBitmap(
+                bitmap,
+                (bitmap.width * scale).toInt(),
+                (bitmap.height * scale).toInt(),
+                true
+            )
+        } else bitmap
+
+        val result = Bitmap.createBitmap(scaled.width, scaled.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(result)
+
+        // コントラストを強めつつ、彩度を落としてグレースケールに近づける
+        val contrast = 1.5f
+        val brightness = -40f
+        val contrastMatrix = ColorMatrix(
+            floatArrayOf(
+                contrast, 0f, 0f, 0f, brightness,
+                0f, contrast, 0f, 0f, brightness,
+                0f, 0f, contrast, 0f, brightness,
+                0f, 0f, 0f, 1f, 0f
+            )
+        )
+        val grayscaleMatrix = ColorMatrix().apply { setSaturation(0f) }
+        grayscaleMatrix.postConcat(contrastMatrix)
+
+        val paint = Paint().apply { colorFilter = ColorMatrixColorFilter(grayscaleMatrix) }
+        canvas.drawBitmap(scaled, 0f, 0f, paint)
+
+        return result
+    }
+
     /** 選択範囲を切り出し、その画像に対してOCR(文字認識)を実行する */
     private fun recognizeTextInSelection() {
         val cropped = cropSelectedArea() ?: return
-        val inputImage = InputImage.fromBitmap(cropped, 0)
+        val processed = preprocessForOcr(cropped)
+        val inputImage = InputImage.fromBitmap(processed, 0)
 
         btnOcr.isEnabled = false
         tvHint.text = "文字を認識しています…"
