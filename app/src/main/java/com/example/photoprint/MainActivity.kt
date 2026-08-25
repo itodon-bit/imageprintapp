@@ -15,9 +15,11 @@ import android.net.Uri
 import android.os.Bundle
 import android.text.StaticLayout
 import android.text.TextPaint
+import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,6 +38,7 @@ import kotlin.math.min
 class MainActivity : AppCompatActivity() {
 
     private lateinit var imageView: ImageView
+    private lateinit var photoContainer: View
     private lateinit var cropOverlayView: CropOverlayView
     private lateinit var btnTakePhoto: Button
     private lateinit var btnPrint: Button
@@ -81,6 +84,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         imageView = findViewById(R.id.imageView)
+        photoContainer = findViewById(R.id.photoContainer)
         cropOverlayView = findViewById(R.id.cropOverlayView)
         btnTakePhoto = findViewById(R.id.btnTakePhoto)
         btnPrint = findViewById(R.id.btnPrint)
@@ -93,6 +97,27 @@ class MainActivity : AppCompatActivity() {
         btnPrint.setOnClickListener { printSelectedArea() }
         btnOcr.setOnClickListener { recognizeTextInSelection() }
         btnPrintText.setOnClickListener { printRecognizedText() }
+
+        // 編集欄をタップして編集を始めたら、写真プレビューを隠してその分編集欄を大きく表示する。
+        // ボタン類は編集欄より上にあるため、最大化中も押せる状態のまま残る。
+        etRecognizedText.setOnFocusChangeListener { _, hasFocus ->
+            setTextEditingExpanded(hasFocus)
+        }
+    }
+
+    /** 編集欄を最大化する/元に戻す。trueで写真プレビューを隠して編集欄に画面を譲る */
+    private fun setTextEditingExpanded(expanded: Boolean) {
+        photoContainer.visibility = if (expanded) View.GONE else View.VISIBLE
+
+        val params = etRecognizedText.layoutParams as LinearLayout.LayoutParams
+        if (expanded) {
+            params.height = 0
+            params.weight = 1f
+        } else {
+            params.height = (160 * resources.displayMetrics.density).toInt()
+            params.weight = 0f
+        }
+        etRecognizedText.layoutParams = params
     }
 
     private fun checkPermissionAndLaunchCamera() {
@@ -134,7 +159,11 @@ class MainActivity : AppCompatActivity() {
         btnOcr.isEnabled = true
         btnPrintText.isEnabled = false
         etRecognizedText.setText("")
-        tvHint.text = "指でドラッグして印刷したい範囲を選択してください"
+        tvHint.text = "写真全体の文字を自動で読み取っています…"
+
+        // 範囲選択の手間を省くため、撮影直後に写真全体を自動でOCRする
+        // (あとから範囲を選んで「選択範囲を文字認識」を押せば、その部分だけで再認識も可能)
+        bitmap.let { runOcr(it) }
     }
 
     /** 画像を必要サイズまで縮小して読み込む(OutOfMemory対策)。EXIFの回転情報も適用する */
@@ -272,10 +301,15 @@ class MainActivity : AppCompatActivity() {
         return result
     }
 
-    /** 選択範囲を切り出し、その画像に対してOCR(文字認識)を実行する */
+    /** 選択範囲を切り出し、その画像に対してOCR(文字認識)を実行する。範囲未選択なら写真全体が対象になる */
     private fun recognizeTextInSelection() {
         val cropped = cropSelectedArea() ?: return
-        val processed = preprocessForOcr(cropped)
+        runOcr(cropped)
+    }
+
+    /** 指定したBitmapに対してOCR(文字認識)を実行する共通処理 */
+    private fun runOcr(bitmap: Bitmap) {
+        val processed = preprocessForOcr(bitmap)
         val inputImage = InputImage.fromBitmap(processed, 0)
 
         btnOcr.isEnabled = false
@@ -291,7 +325,8 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     etRecognizedText.setText(recognized)
                     btnPrintText.isEnabled = true
-                    tvHint.text = "認識結果を確認・修正してから印刷してください"
+                    tvHint.text = "認識結果を確認・修正してから印刷してください" +
+                        "(うまく読めない場合は範囲を選んで「選択範囲を文字認識」で再認識できます)"
                 }
             }
             .addOnFailureListener { e ->

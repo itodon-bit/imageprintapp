@@ -7,6 +7,7 @@
 
     <!-- 写真表示エリア。ImageViewの上にCropOverlayViewを重ねて範囲選択を行う -->
     <FrameLayout
+        android:id="@+id/photoContainer"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
@@ -62,7 +63,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:enabled="false"
-            android:text="選択範囲を文字認識" />
+            android:text="範囲を選んで再認識" />
 
         <Button
             android:id="@+id/btnPrintText"
@@ -88,6 +89,7 @@
         android:id="@+id/etRecognizedText"
         android:layout_width="match_parent"
         android:layout_height="160dp"
+        android:layout_weight="0"
         android:layout_marginTop="4dp"
         android:background="#F5F5F5"
         android:gravity="top|start"
