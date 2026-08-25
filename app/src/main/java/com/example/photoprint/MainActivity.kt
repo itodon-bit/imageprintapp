@@ -1,6 +1,7 @@
 package com.example.photoprint
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -16,6 +17,7 @@ import android.os.Bundle
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.view.View
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
@@ -95,7 +97,7 @@ class MainActivity : AppCompatActivity() {
 
         btnTakePhoto.setOnClickListener { checkPermissionAndLaunchCamera() }
         btnPrint.setOnClickListener { printSelectedArea() }
-        btnOcr.setOnClickListener { recognizeTextInSelection() }
+        btnOcr.setOnClickListener { onOcrButtonClicked() }
         btnPrintText.setOnClickListener { printRecognizedText() }
 
         // 編集欄をタップして編集を始めたら、写真プレビューを隠してその分編集欄を大きく表示する。
@@ -299,6 +301,27 @@ class MainActivity : AppCompatActivity() {
         canvas.drawBitmap(scaled, 0f, 0f, paint)
 
         return result
+    }
+
+    /**
+     * 「範囲を選んで再認識」ボタンの処理。
+     * 編集欄にフォーカスがあって写真が隠れている状態の場合は、まず写真を表示するだけに留め、
+     * 範囲を選び直せるようにする。写真が見えている状態であれば、そのまま選択範囲で認識を実行する。
+     */
+    private fun onOcrButtonClicked() {
+        if (photoContainer.visibility != View.VISIBLE) {
+            etRecognizedText.clearFocus()
+            setTextEditingExpanded(false)
+            hideKeyboard()
+            tvHint.text = "写真の上で範囲を選んでから、もう一度「範囲を選んで再認識」を押してください"
+        } else {
+            recognizeTextInSelection()
+        }
+    }
+
+    private fun hideKeyboard() {
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.hideSoftInputFromWindow(etRecognizedText.windowToken, 0)
     }
 
     /** 選択範囲を切り出し、その画像に対してOCR(文字認識)を実行する。範囲未選択なら写真全体が対象になる */
